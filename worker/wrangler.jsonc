@@ -1,11 +1,10 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-
-  "name": "fli-mcp",
-
+  "name": "fli",
   "main": "src/index.ts",
-
   "compatibility_date": "2026-09-04",
-
-  "workers_dev": true
+  "workers_dev": true,
+  "alias": {
+    "zod": "./node_modules/zod"
+  }
 }
