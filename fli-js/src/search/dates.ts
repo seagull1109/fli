@@ -145,6 +145,11 @@ export class SearchDates {
     const response = await this.client.post(url, { body: `f.req=${encoded}` });
     const data = parseFirstWrbPayload(response.text);
     
+    console.log("CALENDAR_STATUS", response.status);
+    console.log("CALENDAR_HEADERS", JSON.stringify(Object.fromEntries(response.headers.entries())));
+    console.log("CALENDAR_BODY_LENGTH", response.text.length);
+
+    
     console.log("CALENDAR_RAW_RESPONSE", response.text.slice(0, 5000));
     console.log("CALENDAR_PARSED_DATA", JSON.stringify(data).slice(0, 5000));
     
