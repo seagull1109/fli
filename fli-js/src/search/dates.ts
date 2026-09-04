@@ -15,6 +15,7 @@ import { withLocaleParams } from "./urls.ts";
 import { parseFirstWrbPayload } from "./wire.ts";
 
 const MAX_DAYS_PER_SEARCH = 61;
+
 const BASE_URL =
   "https://www.google.com/_/FlightsFrontendUi/data/travel.frontend.flights.FlightsFrontendService/GetCalendarGraph";
 
@@ -34,6 +35,7 @@ export interface DateSearchOptions {
 function cloneSegments(filters: DateSearchFilters) {
   return filters.flight_segments.map((s) => {
     const clone = Object.create(Object.getPrototypeOf(s)) as typeof s;
+
     Object.assign(clone, {
       departure_airport: s.departure_airport,
       arrival_airport: s.arrival_airport,
@@ -41,12 +43,15 @@ function cloneSegments(filters: DateSearchFilters) {
       time_restrictions: s.time_restrictions,
       selected_flight: s.selected_flight,
     });
+
     return clone;
   });
 }
 
 function cloneFilters(filters: DateSearchFilters): DateSearchFilters {
-  const out = Object.create(DateSearchFilters.prototype) as DateSearchFilters;
+  const out = Object.create(
+    DateSearchFilters.prototype,
+  ) as DateSearchFilters;
 
   Object.assign(out, {
     trip_type: filters.trip_type,
@@ -54,12 +59,18 @@ function cloneFilters(filters: DateSearchFilters): DateSearchFilters {
     flight_segments: cloneSegments(filters),
     stops: filters.stops,
     seat_type: filters.seat_type,
-    price_limit: filters.price_limit ? { ...filters.price_limit } : null,
-    airlines: filters.airlines ? [...filters.airlines] : null,
+    price_limit: filters.price_limit
+      ? { ...filters.price_limit }
+      : null,
+    airlines: filters.airlines
+      ? [...filters.airlines]
+      : null,
     airlines_exclude: filters.airlines_exclude
       ? [...filters.airlines_exclude]
       : null,
-    alliances: filters.alliances ? [...filters.alliances] : null,
+    alliances: filters.alliances
+      ? [...filters.alliances]
+      : null,
     alliances_exclude: filters.alliances_exclude
       ? [...filters.alliances_exclude]
       : null,
@@ -68,7 +79,9 @@ function cloneFilters(filters: DateSearchFilters): DateSearchFilters {
       ? { ...filters.layover_restrictions }
       : null,
     emissions: filters.emissions,
-    bags: filters.bags ? { ...filters.bags } : null,
+    bags: filters.bags
+      ? { ...filters.bags }
+      : null,
     from_date: filters.from_date,
     to_date: filters.to_date,
     duration: filters.duration,
@@ -93,16 +106,23 @@ export class SearchDates {
   ): Promise<DatePrice[] | null> {
     const fromDate = parseIsoDate(filters.from_date);
     const toDate = parseIsoDate(filters.to_date);
+
     const dayMs = 24 * 60 * 60 * 1000;
 
     const dateRange =
-      Math.floor((toDate.getTime() - fromDate.getTime()) / dayMs) + 1;
+      Math.floor(
+        (toDate.getTime() - fromDate.getTime()) / dayMs,
+      ) + 1;
 
     if (dateRange <= MAX_DAYS_PER_SEARCH) {
       return this._searchChunk(filters, options);
     }
 
-    const chunkFilters = this._buildChunkFilters(filters, fromDate, toDate);
+    const chunkFilters = this._buildChunkFilters(
+      filters,
+      fromDate,
+      toDate,
+    );
 
     const chunkResults = await parallelMap(
       (cf) => this._searchChunk(cf, options),
@@ -112,7 +132,9 @@ export class SearchDates {
     const allResults: DatePrice[] = [];
 
     for (const r of chunkResults) {
-      if (r) allResults.push(...r);
+      if (r) {
+        allResults.push(...r);
+      }
     }
 
     return allResults.length > 0 ? allResults : null;
@@ -124,6 +146,7 @@ export class SearchDates {
     toDate: Date,
   ): DateSearchFilters[] {
     const chunks: DateSearchFilters[] = [];
+
     let currentFrom = fromDate;
     let chunkIndex = 0;
 
@@ -131,7 +154,8 @@ export class SearchDates {
 
     while (currentFrom <= toDate) {
       const endMs =
-        currentFrom.getTime() + (MAX_DAYS_PER_SEARCH - 1) * dayMs;
+        currentFrom.getTime() +
+        (MAX_DAYS_PER_SEARCH - 1) * dayMs;
 
       const currentTo = new Date(
         Math.min(endMs, toDate.getTime()),
@@ -139,14 +163,20 @@ export class SearchDates {
 
       const cloned = cloneFilters(filters);
 
-      const shiftDays = MAX_DAYS_PER_SEARCH * chunkIndex;
+      const shiftDays =
+        MAX_DAYS_PER_SEARCH * chunkIndex;
 
       if (chunkIndex > 0) {
         for (const segment of cloned.flight_segments) {
-          const segDate = parseIsoDate(segment.travel_date);
+          const segDate = parseIsoDate(
+            segment.travel_date,
+          );
 
           segment.travel_date = formatIsoDate(
-            new Date(segDate.getTime() + shiftDays * dayMs),
+            new Date(
+              segDate.getTime() +
+                shiftDays * dayMs,
+            ),
           );
         }
       }
@@ -156,7 +186,10 @@ export class SearchDates {
 
       chunks.push(cloned);
 
-      currentFrom = new Date(currentTo.getTime() + dayMs);
+      currentFrom = new Date(
+        currentTo.getTime() + dayMs,
+      );
+
       chunkIndex++;
     }
 
@@ -168,9 +201,6 @@ export class SearchDates {
     options: DateSearchOptions,
   ): Promise<DatePrice[] | null> {
     const encoded = filters.encode();
-
-    console.log("CALENDAR_ENCODED_LENGTH", encoded.length);
-    console.log("CALENDAR_ENCODED", encoded.slice(0, 10000));
 
     const url = withLocaleParams(
       BASE_URL,
@@ -185,85 +215,34 @@ export class SearchDates {
 
     const data = parseFirstWrbPayload(response.text);
 
-    console.log("CALENDAR_STATUS", response.status);
-    console.log(
-      "CALENDAR_HEADERS",
-      JSON.stringify(
-        Object.fromEntries(response.headers.entries()),
-      ),
-    );
-    console.log("CALENDAR_BODY_LENGTH", response.text.length);
-    console.log(
-      "CALENDAR_RAW_RESPONSE",
-      response.text.slice(0, 5000),
-    );
-    console.log(
-      "CALENDAR_PARSED_DATA",
-      JSON.stringify(data).slice(0, 5000),
-    );
-
     if (data == null || !Array.isArray(data)) {
-      console.log("CALENDAR_DATA_INVALID");
       return null;
     }
 
     const items = data[data.length - 1];
 
     if (!Array.isArray(items)) {
-      console.log("CALENDAR_ITEMS_INVALID");
       return null;
     }
-
-    console.log("CALENDAR_ITEMS_LENGTH", items.length);
-    console.log(
-      "CALENDAR_ITEMS",
-      JSON.stringify(items).slice(0, 10000),
-    );
 
     const out: DatePrice[] = [];
 
     for (const item of items) {
-      console.log(
-        "CALENDAR_ITEM",
-        JSON.stringify(item),
-      );
-
       const price = SearchDates._parsePrice(item);
 
-      console.log("CALENDAR_PRICE", price);
-
       if (price == null) {
-        console.log("CALENDAR_PRICE_NULL");
         continue;
       }
 
-      const date = SearchDates._parseDate(
-        item,
-        filters.trip_type,
-      );
-
-      const currency = SearchDates._parseCurrency(item);
-
-      console.log(
-        "CALENDAR_PARSED_ITEM",
-        JSON.stringify({
-          date,
-          price,
-          currency,
-        }),
-      );
-
       out.push({
-        date,
+        date: SearchDates._parseDate(
+          item,
+          filters.trip_type,
+        ),
         price,
-        currency,
+        currency: SearchDates._parseCurrency(item),
       });
     }
-
-    console.log(
-      "CALENDAR_OUT",
-      JSON.stringify(out),
-    );
 
     return out;
   }
@@ -273,11 +252,15 @@ export class SearchDates {
     tripType: TripType,
   ): [Date] | [Date, Date] {
     if (!Array.isArray(item)) {
-      throw new Error("date item is not an array");
+      throw new Error(
+        "date item is not an array",
+      );
     }
 
     if (tripType === TripType.ONE_WAY) {
-      return [parseIsoDate(item[0] as string)];
+      return [
+        parseIsoDate(item[0] as string),
+      ];
     }
 
     return [
@@ -287,19 +270,28 @@ export class SearchDates {
   }
 
   static _parsePrice(item: unknown): number | null {
-    if (!Array.isArray(item) || item.length <= 2) {
+    if (
+      !Array.isArray(item) ||
+      item.length <= 2
+    ) {
       return null;
     }
 
     const middle = item[2];
 
-    if (!Array.isArray(middle) || middle.length === 0) {
+    if (
+      !Array.isArray(middle) ||
+      middle.length === 0
+    ) {
       return null;
     }
 
     const inner = middle[0];
 
-    if (!Array.isArray(inner) || inner.length <= 1) {
+    if (
+      !Array.isArray(inner) ||
+      inner.length <= 1
+    ) {
       return null;
     }
 
@@ -313,14 +305,22 @@ export class SearchDates {
     return Number.isFinite(n) ? n : null;
   }
 
-  static _parseCurrency(item: unknown): string | null {
-    if (!Array.isArray(item) || item.length <= 2) {
+  static _parseCurrency(
+    item: unknown,
+  ): string | null {
+    if (
+      !Array.isArray(item) ||
+      item.length <= 2
+    ) {
       return null;
     }
 
     const middle = item[2];
 
-    if (!Array.isArray(middle) || middle.length <= 1) {
+    if (
+      !Array.isArray(middle) ||
+      middle.length <= 1
+    ) {
       return null;
     }
 
