@@ -79,41 +79,81 @@ export class SearchFlights {
     },
   ): Promise<FlightResult[] | null> {
     const encoded = filters.encode();
+
     const url = withLocaleParams(
       SearchFlights.BASE_URL,
       opts.currency,
       opts.language,
       opts.country,
     );
-    const response = await this.client.post(url, { body: `f.req=${encoded}` });
+
+    const response = await this.client.post(url, {
+      body: `f.req=${encoded}`,
+    });
+
     const inner = parseFirstWrbPayload(response.text);
+
     if (inner == null) return null;
+
+    // Temporary diagnostics: inspect the actual Google Shopping response shape.
+    console.log("SHOPPING_INNER_TYPE", typeof inner);
+
+    console.log(
+      "SHOPPING_INNER_LENGTH",
+      Array.isArray(inner) ? inner.length : "NOT_ARRAY",
+    );
+
+    console.log(
+      "SHOPPING_INNER_SHAPES",
+      Array.isArray(inner)
+        ? inner.map((item, index) => ({
+            index,
+            type: Array.isArray(item) ? "array" : typeof item,
+            length: Array.isArray(item) ? item.length : null,
+          }))
+        : null,
+    );
 
     if (opts.captureSession) this._captureSessionId(inner);
 
     if (!Array.isArray(inner)) {
-      throw new SearchParseError("Shopping response shape changed — top-level is not an array");
+      throw new SearchParseError(
+        "Shopping response shape changed — top-level is not an array",
+      );
     }
 
     const flightsRaw: unknown[] = [];
+
     for (const i of [2, 3]) {
       const block = inner[i];
+
       if (Array.isArray(block) && Array.isArray(block[0])) {
-        for (const item of block[0]) flightsRaw.push(item);
+        for (const item of block[0]) {
+          flightsRaw.push(item);
+        }
       }
     }
 
     const flights: FlightResult[] = [];
     const failureSamples: string[] = [];
     let anyFailure = false;
+
     for (const row of flightsRaw) {
       if (!Array.isArray(row)) continue;
+
       try {
         flights.push(parseFlightRow(row));
       } catch (err) {
         anyFailure = true;
-        const reason = `${err instanceof Error ? err.name : "Error"}: ${err instanceof Error ? err.message : String(err)}`;
-        if (!failureSamples.includes(reason) && failureSamples.length < 3) {
+
+        const reason =
+          `${err instanceof Error ? err.name : "Error"}: ` +
+          `${err instanceof Error ? err.message : String(err)}`;
+
+        if (
+          !failureSamples.includes(reason) &&
+          failureSamples.length < 3
+        ) {
           failureSamples.push(reason);
         }
       }
@@ -121,6 +161,7 @@ export class SearchFlights {
 
     if (flightsRaw.length > 0 && anyFailure && flights.length === 0) {
       const sample = failureSamples.join("; ");
+
       throw new SearchParseError(
         `Parsed 0/${flightsRaw.length} flight rows — Google response shape may have changed (sample reasons: ${sample})`,
       );
@@ -136,13 +177,18 @@ export class SearchFlights {
     options: BookingOptions = {},
   ): Promise<BookingOption[]> {
     const results: FlightResult[] = Array.isArray(flight) ? flight : [flight];
+
     if (results.length === 0) {
-      throw new Error("flight argument must be a FlightResult or non-empty array of them");
+      throw new Error(
+        "flight argument must be a FlightResult or non-empty array of them",
+      );
     }
 
-    const effectiveSession = options.sessionId ?? this._lastSessionId ?? null;
+    const effectiveSession =
+      options.sessionId ?? this._lastSessionId ?? null;
 
     let token = options.bookingToken ?? null;
+
     if (
       token == null &&
       effectiveSession &&
@@ -150,8 +196,10 @@ export class SearchFlights {
     ) {
       const last = results[results.length - 1] as FlightResult;
       const lastLeg = last.legs[last.legs.length - 1];
+
       if (lastLeg) {
         const airlineCode = (lastLeg.airline as string).replace(/^_/, "");
+
         token = buildBookingToken({
           sessionId: effectiveSession,
           airlineCode,
@@ -169,6 +217,7 @@ export class SearchFlights {
         (results[0] as FlightResult).booking_token ??
         null;
     }
+
     if (!token) {
       throw new Error(
         "Missing booking token. Call SearchFlights.search(...) before getBookingOptions(...) so the client can cache the session id, or pass `sessionId` / `bookingToken` explicitly.",
@@ -178,30 +227,53 @@ export class SearchFlights {
     // Apply the selected_flight on a CLONE of the filters so we don't mutate the caller's input.
     const prepared = cloneFilters(filters);
     const segments = prepared.flight_segments;
+
     if (results.length > segments.length) {
-      throw new Error(`flight has ${results.length} segments but filters has ${segments.length}`);
+      throw new Error(
+        `flight has ${results.length} segments but filters has ${segments.length}`,
+      );
     }
+
     for (let i = 0; i < results.length; i++) {
       const seg = segments[i];
       const res = results[i];
-      if (seg && res) seg.selected_flight = res;
+
+      if (seg && res) {
+        seg.selected_flight = res;
+      }
     }
 
-    const encoded = SearchFlights._encodeBookingPayload(token, prepared);
+    const encoded = SearchFlights._encodeBookingPayload(
+      token,
+      prepared,
+    );
+
     const url = withLocaleParams(
       SearchFlights.BOOKING_URL,
       options.currency ?? null,
       options.language ?? null,
       options.country ?? null,
     );
-    const response = await this.client.post(url, { body: `f.req=${encoded}` });
+
+    const response = await this.client.post(url, {
+      body: `f.req=${encoded}`,
+    });
 
     const chunks = [...iterWrbChunks(response.text)];
+
     if (chunks.length === 0) return [];
 
-    const parsed = await parallelMap((chunk) => Promise.resolve(parseBookingChunk(chunk)), chunks);
+    const parsed = await parallelMap(
+      (chunk) => Promise.resolve(parseBookingChunk(chunk)),
+      chunks,
+    );
+
     const out: BookingOption[] = [];
-    for (const chunkOptions of parsed) out.push(...chunkOptions);
+
+    for (const chunkOptions of parsed) {
+      out.push(...chunkOptions);
+    }
+
     return out;
   }
 
@@ -213,8 +285,8 @@ export class SearchFlights {
    * options and the "Continue" booking CTA included.
    *
    * The `tfs` itinerary token is fully deterministic (built from the flight's
-   * airports, dates and flight numbers); no session id or network round-trip is
-   * required, so the same itinerary always yields the same URL. This method
+   * airports, dates and flight numbers); no session id or network round-trip
+   * is required, so the same itinerary always yields the same URL. This method
    * never throws — on malformed input it falls back to the generic Google
    * Flights URL.
    *
@@ -225,22 +297,29 @@ export class SearchFlights {
     flight: FlightResult | FlightResult[],
     options: BookingUrlOptions = {},
   ): string {
-    const results: FlightResult[] = Array.isArray(flight) ? flight : [flight];
+    const results: FlightResult[] = Array.isArray(flight)
+      ? flight
+      : [flight];
+
     // Round-trip is exactly 2 segments; one-way and multi-city (3+) both use
     // isOneWay=true (f19=2). Only round-trip sets f19=1.
     const isOneWay = results.length !== 2;
 
-    const iata = (x: unknown): string => String(x).replace(/^_/, "");
+    const iata = (x: unknown): string =>
+      String(x).replace(/^_/, "");
+
     // Match the decoder, which stores datetimes with local components
     // (new Date(y, m-1, d, h, min)); read them back the same way.
     const depDate = (d: Date): string => {
       const y = d.getFullYear();
       const m = String(d.getMonth() + 1).padStart(2, "0");
       const day = String(d.getDate()).padStart(2, "0");
+
       return `${y}-${m}-${day}`;
     };
 
     let url: string;
+
     try {
       const segments: LegSpec[][] = results.map((result) =>
         result.legs.map((leg) => ({
@@ -251,8 +330,11 @@ export class SearchFlights {
           flightNumber: leg.flight_number,
         })),
       );
+
       const tfs = buildTfsToken(segments, { isOneWay });
-      url = `https://www.google.com/travel/flights/booking?tfs=${tfs}`;
+
+      url =
+        `https://www.google.com/travel/flights/booking?tfs=${tfs}`;
     } catch {
       url = "https://www.google.com/travel/flights";
     }
@@ -267,9 +349,13 @@ export class SearchFlights {
 
   private _captureSessionId(inner: unknown): void {
     if (!Array.isArray(inner)) return;
+
     const first = inner[0];
+
     if (!Array.isArray(first)) return;
+
     const session = first[4];
+
     if (typeof session === "string" && session.length > 0) {
       this._lastSessionId = session;
     }
@@ -290,7 +376,12 @@ export class SearchFlights {
     },
   ): Promise<Array<FlightResult[]>> {
     const numSegments = filters.flight_segments.length;
-    const selectedCount = filters.flight_segments.filter((s) => s.selected_flight != null).length;
+
+    const selectedCount =
+      filters.flight_segments.filter(
+        (s) => s.selected_flight != null,
+      ).length;
+
     if (selectedCount >= numSegments - 1) {
       return flights.map((f) => [f]);
     }
@@ -299,29 +390,47 @@ export class SearchFlights {
 
     const expand = async (
       outbound: FlightResult,
-    ): Promise<[FlightResult, FlightResult[] | Array<FlightResult[]> | null]> => {
+    ): Promise<
+      [FlightResult, FlightResult[] | Array<FlightResult[]> | null]
+    > => {
       const nextFilters = cloneFilters(filters);
       const seg = nextFilters.flight_segments[selectedCount];
-      if (seg) seg.selected_flight = outbound;
+
+      if (seg) {
+        seg.selected_flight = outbound;
+      }
+
       const subFlights = await this._fetchFlights(nextFilters, {
         currency: opts.currency,
         language: opts.language,
         country: opts.country,
         captureSession: false,
       });
-      if (subFlights == null) return [outbound, null];
+
+      if (subFlights == null) {
+        return [outbound, null];
+      }
+
       if (selectedCount + 1 < numSegments - 1) {
-        const expanded = await this._expandMultiLeg(subFlights, nextFilters, opts);
+        const expanded = await this._expandMultiLeg(
+          subFlights,
+          nextFilters,
+          opts,
+        );
+
         return [outbound, expanded];
       }
+
       return [outbound, subFlights];
     };
 
     const expansions = await parallelMap(expand, candidates);
 
     const combos: FlightResult[][] = [];
+
     for (const [outbound, nextResults] of expansions) {
       if (nextResults == null) continue;
+
       for (const nxt of nextResults) {
         if (Array.isArray(nxt)) {
           combos.push([outbound, ...nxt]);
@@ -330,6 +439,7 @@ export class SearchFlights {
         }
       }
     }
+
     return combos;
   }
 
@@ -337,30 +447,66 @@ export class SearchFlights {
   // Booking payload construction
   // ------------------------------------------------------------------
 
-  static _encodeBookingPayload(token: string, filters: FlightSearchFilters): string {
+  static _encodeBookingPayload(
+    token: string,
+    filters: FlightSearchFilters,
+  ): string {
     const formatted = filters.format();
-    if (formatted.length < 2 || !Array.isArray(formatted[1])) {
+
+    if (
+      formatted.length < 2 ||
+      !Array.isArray(formatted[1])
+    ) {
       throw new Error(
         "filters.format() did not return a main struct at index 1; cannot construct a booking payload.",
       );
     }
+
     let main = formatted[1] as unknown[];
-    if (main.length > 18) main = main.slice(0, 18);
-    const payload: unknown[] = [[null, token], main, null, 0];
-    const wrapped: unknown[] = [null, JSON.stringify(payload)];
-    return encodeURIComponent(JSON.stringify(wrapped));
+
+    if (main.length > 18) {
+      main = main.slice(0, 18);
+    }
+
+    const payload: unknown[] = [
+      [null, token],
+      main,
+      null,
+      0,
+    ];
+
+    const wrapped: unknown[] = [
+      null,
+      JSON.stringify(payload),
+    ];
+
+    return encodeURIComponent(
+      JSON.stringify(wrapped),
+    );
   }
 }
 
-function cloneFilters(filters: FlightSearchFilters): FlightSearchFilters {
+function cloneFilters(
+  filters: FlightSearchFilters,
+): FlightSearchFilters {
   // The constructor's date validator would re-reject past travel dates if
   // we ran it on a clone — bypass by writing fields directly.
-  const out = Object.create(FlightSearchFilters.prototype) as FlightSearchFilters;
+  const out = Object.create(
+    FlightSearchFilters.prototype,
+  ) as FlightSearchFilters;
+
   Object.assign(out, {
     trip_type: filters.trip_type,
-    passenger_info: { ...filters.passenger_info },
+
+    passenger_info: {
+      ...filters.passenger_info,
+    },
+
     flight_segments: filters.flight_segments.map((s) => {
-      const clone = Object.create(Object.getPrototypeOf(s)) as typeof s;
+      const clone = Object.create(
+        Object.getPrototypeOf(s),
+      ) as typeof s;
+
       Object.assign(clone, {
         departure_airport: s.departure_airport,
         arrival_airport: s.arrival_airport,
@@ -368,22 +514,39 @@ function cloneFilters(filters: FlightSearchFilters): FlightSearchFilters {
         time_restrictions: s.time_restrictions,
         selected_flight: s.selected_flight,
       });
+
       return clone;
     }),
+
     stops: filters.stops,
     seat_type: filters.seat_type,
-    price_limit: filters.price_limit ? { ...filters.price_limit } : null,
-    airlines: filters.airlines ? [...filters.airlines] : null,
-    airlines_exclude: filters.airlines_exclude ? [...filters.airlines_exclude] : null,
-    alliances: filters.alliances ? [...filters.alliances] : null,
-    alliances_exclude: filters.alliances_exclude ? [...filters.alliances_exclude] : null,
+    price_limit: filters.price_limit
+      ? { ...filters.price_limit }
+      : null,
+    airlines: filters.airlines
+      ? [...filters.airlines]
+      : null,
+    airlines_exclude: filters.airlines_exclude
+      ? [...filters.airlines_exclude]
+      : null,
+    alliances: filters.alliances
+      ? [...filters.alliances]
+      : null,
+    alliances_exclude: filters.alliances_exclude
+      ? [...filters.alliances_exclude]
+      : null,
     max_duration: filters.max_duration,
-    layover_restrictions: filters.layover_restrictions ? { ...filters.layover_restrictions } : null,
+    layover_restrictions: filters.layover_restrictions
+      ? { ...filters.layover_restrictions }
+      : null,
     sort_by: filters.sort_by,
     exclude_basic_economy: filters.exclude_basic_economy,
     emissions: filters.emissions,
-    bags: filters.bags ? { ...filters.bags } : null,
+    bags: filters.bags
+      ? { ...filters.bags }
+      : null,
     show_all_results: filters.show_all_results,
   });
+
   return out;
 }
