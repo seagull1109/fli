@@ -392,14 +392,17 @@ function createServer() {
           topN: 5,
         });
 
+        
         const bookingUrl = googleFlightsUrl(
           airportCode(origins[0]),
           airportCode(destinations[0]),
           params.departure_date,
           params.return_date ?? null,
-          params.currency ?? null,
-          params.language ?? null,
-          params.country ?? null,
+          {
+            currency: params.currency ?? "USD",
+            language: params.language ?? null,
+            country: params.country ?? null,
+          },
         );
 
         if (!flights) {
@@ -581,9 +584,11 @@ function createServer() {
                     airportCode(destinations[0]),
                     departure,
                     returnDate,
-                    params.currency ?? null,
-                    params.language ?? null,
-                    params.country ?? null,
+                    {
+                      currency: params.currency ?? "USD",
+                      language: params.language ?? null,
+                      country: params.country ?? null,
+                    },
                   ),
                 }
               : {}),
@@ -677,9 +682,11 @@ function createServer() {
           airportCode(destinations[0]),
           params.departure_date,
           params.return_date ?? null,
-          params.currency ?? null,
-          params.language ?? null,
-          params.country ?? null,
+          {
+            currency: params.currency ?? "USD",
+            language: params.language ?? null,
+            country: params.country ?? null,
+          },
         );
 
         if (!flights || flights.length === 0) {
