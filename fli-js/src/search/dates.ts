@@ -47,6 +47,7 @@ function cloneSegments(filters: DateSearchFilters) {
 
 function cloneFilters(filters: DateSearchFilters): DateSearchFilters {
   const out = Object.create(DateSearchFilters.prototype) as DateSearchFilters;
+
   Object.assign(out, {
     trip_type: filters.trip_type,
     passenger_info: { ...filters.passenger_info },
@@ -55,17 +56,24 @@ function cloneFilters(filters: DateSearchFilters): DateSearchFilters {
     seat_type: filters.seat_type,
     price_limit: filters.price_limit ? { ...filters.price_limit } : null,
     airlines: filters.airlines ? [...filters.airlines] : null,
-    airlines_exclude: filters.airlines_exclude ? [...filters.airlines_exclude] : null,
+    airlines_exclude: filters.airlines_exclude
+      ? [...filters.airlines_exclude]
+      : null,
     alliances: filters.alliances ? [...filters.alliances] : null,
-    alliances_exclude: filters.alliances_exclude ? [...filters.alliances_exclude] : null,
+    alliances_exclude: filters.alliances_exclude
+      ? [...filters.alliances_exclude]
+      : null,
     max_duration: filters.max_duration,
-    layover_restrictions: filters.layover_restrictions ? { ...filters.layover_restrictions } : null,
+    layover_restrictions: filters.layover_restrictions
+      ? { ...filters.layover_restrictions }
+      : null,
     emissions: filters.emissions,
     bags: filters.bags ? { ...filters.bags } : null,
     from_date: filters.from_date,
     to_date: filters.to_date,
     duration: filters.duration,
   });
+
   return out;
 }
 
@@ -86,19 +94,27 @@ export class SearchDates {
     const fromDate = parseIsoDate(filters.from_date);
     const toDate = parseIsoDate(filters.to_date);
     const dayMs = 24 * 60 * 60 * 1000;
-    const dateRange = Math.floor((toDate.getTime() - fromDate.getTime()) / dayMs) + 1;
+
+    const dateRange =
+      Math.floor((toDate.getTime() - fromDate.getTime()) / dayMs) + 1;
 
     if (dateRange <= MAX_DAYS_PER_SEARCH) {
       return this._searchChunk(filters, options);
     }
 
     const chunkFilters = this._buildChunkFilters(filters, fromDate, toDate);
-    const chunkResults = await parallelMap((cf) => this._searchChunk(cf, options), chunkFilters);
+
+    const chunkResults = await parallelMap(
+      (cf) => this._searchChunk(cf, options),
+      chunkFilters,
+    );
 
     const allResults: DatePrice[] = [];
+
     for (const r of chunkResults) {
       if (r) allResults.push(...r);
     }
+
     return allResults.length > 0 ? allResults : null;
   }
 
@@ -110,24 +126,40 @@ export class SearchDates {
     const chunks: DateSearchFilters[] = [];
     let currentFrom = fromDate;
     let chunkIndex = 0;
+
     const dayMs = 24 * 60 * 60 * 1000;
+
     while (currentFrom <= toDate) {
-      const endMs = currentFrom.getTime() + (MAX_DAYS_PER_SEARCH - 1) * dayMs;
-      const currentTo = new Date(Math.min(endMs, toDate.getTime()));
+      const endMs =
+        currentFrom.getTime() + (MAX_DAYS_PER_SEARCH - 1) * dayMs;
+
+      const currentTo = new Date(
+        Math.min(endMs, toDate.getTime()),
+      );
+
       const cloned = cloneFilters(filters);
+
       const shiftDays = MAX_DAYS_PER_SEARCH * chunkIndex;
+
       if (chunkIndex > 0) {
         for (const segment of cloned.flight_segments) {
           const segDate = parseIsoDate(segment.travel_date);
-          segment.travel_date = formatIsoDate(new Date(segDate.getTime() + shiftDays * dayMs));
+
+          segment.travel_date = formatIsoDate(
+            new Date(segDate.getTime() + shiftDays * dayMs),
+          );
         }
       }
+
       cloned.from_date = formatIsoDate(currentFrom);
       cloned.to_date = formatIsoDate(currentTo);
+
       chunks.push(cloned);
+
       currentFrom = new Date(currentTo.getTime() + dayMs);
       chunkIndex++;
     }
+
     return chunks;
   }
 
@@ -136,73 +168,166 @@ export class SearchDates {
     options: DateSearchOptions,
   ): Promise<DatePrice[] | null> {
     const encoded = filters.encode();
-    
+
     console.log("CALENDAR_ENCODED_LENGTH", encoded.length);
     console.log("CALENDAR_ENCODED", encoded.slice(0, 10000));
-    
+
     const url = withLocaleParams(
       BASE_URL,
       options.currency ?? null,
       options.language ?? null,
       options.country ?? null,
     );
-    const response = await this.client.post(url, { body: `f.req=${encoded}` });
-    const data = parseFirstWrbPayload(response.text);
-    
-    console.log("CALENDAR_STATUS", response.status);
-    console.log("CALENDAR_HEADERS", JSON.stringify(Object.fromEntries(response.headers.entries())));
-    console.log("CALENDAR_BODY_LENGTH", response.text.length);
 
-    
-    console.log("CALENDAR_RAW_RESPONSE", response.text.slice(0, 5000));
-    console.log("CALENDAR_PARSED_DATA", JSON.stringify(data).slice(0, 5000));
-    
-    if (data == null || !Array.isArray(data)) return null;
+    const response = await this.client.post(url, {
+      body: `f.req=${encoded}`,
+    });
+
+    const data = parseFirstWrbPayload(response.text);
+
+    console.log("CALENDAR_STATUS", response.status);
+    console.log(
+      "CALENDAR_HEADERS",
+      JSON.stringify(
+        Object.fromEntries(response.headers.entries()),
+      ),
+    );
+    console.log("CALENDAR_BODY_LENGTH", response.text.length);
+    console.log(
+      "CALENDAR_RAW_RESPONSE",
+      response.text.slice(0, 5000),
+    );
+    console.log(
+      "CALENDAR_PARSED_DATA",
+      JSON.stringify(data).slice(0, 5000),
+    );
+
+    if (data == null || !Array.isArray(data)) {
+      console.log("CALENDAR_DATA_INVALID");
+      return null;
+    }
 
     const items = data[data.length - 1];
-    if (!Array.isArray(items)) return null;
+
+    if (!Array.isArray(items)) {
+      console.log("CALENDAR_ITEMS_INVALID");
+      return null;
+    }
+
+    console.log("CALENDAR_ITEMS_LENGTH", items.length);
+    console.log(
+      "CALENDAR_ITEMS",
+      JSON.stringify(items).slice(0, 10000),
+    );
 
     const out: DatePrice[] = [];
-    console.log("CALENDAR_ITEMS", JSON.stringify(items).slice(0, 10000));
+
     for (const item of items) {
-      console.log("CALENDAR_ITEM", JSON.stringify(item));
+      console.log(
+        "CALENDAR_ITEM",
+        JSON.stringify(item),
+      );
+
       const price = SearchDates._parsePrice(item);
+
       console.log("CALENDAR_PRICE", price);
-      if (price == null) continue;
+
+      if (price == null) {
+        console.log("CALENDAR_PRICE_NULL");
+        continue;
+      }
+
+      const date = SearchDates._parseDate(
+        item,
+        filters.trip_type,
+      );
+
+      const currency = SearchDates._parseCurrency(item);
+
+      console.log(
+        "CALENDAR_PARSED_ITEM",
+        JSON.stringify({
+          date,
+          price,
+          currency,
+        }),
+      );
+
       out.push({
-        date: SearchDates._parseDate(item, filters.trip_type),
+        date,
         price,
-        currency: SearchDates._parseCurrency(item),
+        currency,
       });
     }
+
+    console.log(
+      "CALENDAR_OUT",
+      JSON.stringify(out),
+    );
+
     return out;
   }
 
-  static _parseDate(item: unknown, tripType: TripType): [Date] | [Date, Date] {
-    if (!Array.isArray(item)) throw new Error("date item is not an array");
+  static _parseDate(
+    item: unknown,
+    tripType: TripType,
+  ): [Date] | [Date, Date] {
+    if (!Array.isArray(item)) {
+      throw new Error("date item is not an array");
+    }
+
     if (tripType === TripType.ONE_WAY) {
       return [parseIsoDate(item[0] as string)];
     }
-    return [parseIsoDate(item[0] as string), parseIsoDate(item[1] as string)];
+
+    return [
+      parseIsoDate(item[0] as string),
+      parseIsoDate(item[1] as string),
+    ];
   }
 
   static _parsePrice(item: unknown): number | null {
-    if (!Array.isArray(item) || item.length <= 2) return null;
+    if (!Array.isArray(item) || item.length <= 2) {
+      return null;
+    }
+
     const middle = item[2];
-    if (!Array.isArray(middle) || middle.length === 0) return null;
+
+    if (!Array.isArray(middle) || middle.length === 0) {
+      return null;
+    }
+
     const inner = middle[0];
-    if (!Array.isArray(inner) || inner.length <= 1) return null;
+
+    if (!Array.isArray(inner) || inner.length <= 1) {
+      return null;
+    }
+
     const raw = inner[1];
-    const n = typeof raw === "number" ? raw : Number.parseFloat(raw as string);
+
+    const n =
+      typeof raw === "number"
+        ? raw
+        : Number.parseFloat(raw as string);
+
     return Number.isFinite(n) ? n : null;
   }
 
   static _parseCurrency(item: unknown): string | null {
-    if (!Array.isArray(item) || item.length <= 2) return null;
+    if (!Array.isArray(item) || item.length <= 2) {
+      return null;
+    }
+
     const middle = item[2];
-    if (!Array.isArray(middle) || middle.length <= 1) return null;
+
+    if (!Array.isArray(middle) || middle.length <= 1) {
+      return null;
+    }
+
     try {
-      return extractCurrencyFromPriceToken(middle[1] as string);
+      return extractCurrencyFromPriceToken(
+        middle[1] as string,
+      );
     } catch {
       return null;
     }
