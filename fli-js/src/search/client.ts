@@ -127,8 +127,10 @@ function wrapRequestError(method: string, url: string, err: unknown): SearchClie
     );
   }
   return new SearchClientError(
-    `${method} request to Google Flights (${host}) failed: ${err instanceof Error ? err.name : "Error"}`,
-  );
+  `${method} request to Google Flights (${host}) failed: ${
+    err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+  }`,
+);
 }
 
 export class Client {
@@ -193,7 +195,7 @@ export class Client {
           // Match the Python `raise_for_status` semantics — surface non-2xx
           // as a typed error and let the retry loop decide whether to back off.
           throw new SearchHTTPError(
-            `Google Flights returned an error response (HTTP ${response.status}). The request may be malformed, rate-limited, or blocked.`,
+            `Google Flights returned an error response (HTTP ${response.status}). The  may be malformed, rate-limited, or blocked.`,
             response.status,
           );
         }
