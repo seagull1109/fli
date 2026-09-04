@@ -48,6 +48,9 @@ function errorResult(error: unknown) {
   return jsonResult({
     success: false,
     error: message,
+    ...(error instanceof Error && error.stack
+      ? { stack: error.stack }
+      : {}),
   });
 }
 
