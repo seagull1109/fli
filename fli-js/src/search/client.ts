@@ -179,7 +179,7 @@ export class Client {
       }
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
       try {
-        const init: RequestInit & { proxy?: string } = {
+        const init: RequestInit = {
           method,
           headers: { ...DEFAULT_HEADERS, ...options.headers },
           signal: controller.signal,
@@ -188,7 +188,6 @@ export class Client {
           init.body =
             options.body instanceof Uint8Array ? (options.body as BodyInit) : options.body;
         }
-        if (this.proxy) init.proxy = this.proxy;
         const response = await this.fetchImpl(url, init);
         if (!response.ok) {
           // Match the Python `raise_for_status` semantics — surface non-2xx
