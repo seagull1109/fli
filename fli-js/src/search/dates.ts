@@ -163,8 +163,11 @@ export class SearchDates {
     if (!Array.isArray(items)) return null;
 
     const out: DatePrice[] = [];
+    console.log("CALENDAR_ITEMS", JSON.stringify(items).slice(0, 10000));
     for (const item of items) {
+      console.log("CALENDAR_ITEM", JSON.stringify(item));
       const price = SearchDates._parsePrice(item);
+      console.log("CALENDAR_PRICE", price);
       if (price == null) continue;
       out.push({
         date: SearchDates._parseDate(item, filters.trip_type),
