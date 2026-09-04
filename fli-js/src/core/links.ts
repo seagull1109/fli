@@ -65,7 +65,7 @@ export function googleFlightsUrl(
   const url = `${GOOGLE_FLIGHTS_URL}?q=${encodeURIComponent(query)}`;
   return withLocaleParams(
     url,
-    options.currency ?? null,
+    options.currency ?? "USD",
     options.language ?? null,
     options.country ?? null,
   );
