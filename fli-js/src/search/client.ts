@@ -150,7 +150,7 @@ export class Client {
     this.retries = options.retries ?? DEFAULT_RETRIES;
     this.backoffMs = options.backoffMs ?? DEFAULT_BACKOFF_MS;
     this.proxy = options.proxy === null ? undefined : (options.proxy ?? resolveProxy());
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
   }
 
   async get(url: string, options: RequestOptions = {}): Promise<ClientResponse> {
