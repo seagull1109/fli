@@ -136,6 +136,10 @@ export class SearchDates {
     options: DateSearchOptions,
   ): Promise<DatePrice[] | null> {
     const encoded = filters.encode();
+    
+    console.log("CALENDAR_ENCODED_LENGTH", encoded.length);
+    console.log("CALENDAR_ENCODED", encoded.slice(0, 10000));
+    
     const url = withLocaleParams(
       BASE_URL,
       options.currency ?? null,
